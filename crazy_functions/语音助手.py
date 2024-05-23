@@ -1,39 +1,14 @@
 from toolbox import update_ui
 from toolbox import CatchException, get_conf, markdown_convertion
 from crazy_functions.crazy_utils import input_clipping
-from request_llm.bridge_all import predict_no_ui_long_connection
+from crazy_functions.agent_fns.watchdog import WatchDog
+from request_llms.bridge_all import predict_no_ui_long_connection
 import threading, time
 import numpy as np
 from .live_audio.aliyunASR import AliyunASR
 import json
 import re
 
-class WatchDog():
-    def __init__(self, timeout, bark_fn, interval=3, msg="") -> None:
-        self.last_feed = None
-        self.timeout = timeout
-        self.bark_fn = bark_fn
-        self.interval = interval
-        self.msg = msg
-        self.kill_dog = False
-    
-    def watch(self):
-        while True:
-            if self.kill_dog: break
-            if time.time() - self.last_feed > self.timeout:
-                if len(self.msg) > 0: print(self.msg)
-                self.bark_fn()
-                break
-            time.sleep(self.interval)
-
-    def begin_watch(self):
-        self.last_feed = time.time()
-        th = threading.Thread(target=self.watch)
-        th.daemon = True
-        th.start()
-
-    def feed(self):
-        self.last_feed = time.time()
 
 def chatbot2history(chatbot):
     history = []
@@ -64,7 +39,7 @@ class AsyncGptTask():
         try:
             MAX_TOKEN_ALLO = 2560
             i_say, history = input_clipping(i_say, history, max_token_limit=MAX_TOKEN_ALLO)
-            gpt_say_partial = predict_no_ui_long_connection(inputs=i_say, llm_kwargs=llm_kwargs, history=history, sys_prompt=sys_prompt, 
+            gpt_say_partial = predict_no_ui_long_connection(inputs=i_say, llm_kwargs=llm_kwargs, history=history, sys_prompt=sys_prompt,
                                                             observe_window=observe_window[index], console_slience=True)
         except ConnectionAbortedError as token_exceed_err:
             print('至少一个线程任务Token溢出而失败', e)
@@ -145,7 +120,7 @@ class InterviewAssistant(AliyunASR):
             yield from update_ui(chatbot=chatbot, history=history)      # 刷新界面
             self.plugin_wd.feed()
 
-            if self.event_on_result_chg.is_set(): 
+            if self.event_on_result_chg.is_set():
                 # called when some words have finished
                 self.event_on_result_chg.clear()
                 chatbot[-1] = list(chatbot[-1])
@@ -176,7 +151,7 @@ class InterviewAssistant(AliyunASR):
                 # add gpt task 创建子线程请求gpt，避免线程阻塞
                 history = chatbot2history(chatbot)
                 self.agt.add_async_gpt_task(self.buffered_sentence, len(chatbot)-1, llm_kwargs, history, system_prompt)
-                
+
                 self.buffered_sentence = ""
                 chatbot.append(["[ 请讲话 ]", "[ 正在等您说完问题 ]"])
                 yield from update_ui(chatbot=chatbot, history=history) # 刷新界面
@@ -191,7 +166,7 @@ class InterviewAssistant(AliyunASR):
 
 
 @CatchException
-def 语音助手(txt, llm_kwargs, plugin_kwargs, chatbot, history, system_prompt, web_port):
+def 语音助手(txt, llm_kwargs, plugin_kwargs, chatbot, history, system_prompt, user_request):
     # pip install -U openai-whisper
     chatbot.append(["对话助手函数插件：使用时，双手离开鼠标键盘吧", "音频助手, 正在听您讲话（点击“停止”键可终止程序）..."])
     yield from update_ui(chatbot=chatbot, history=history) # 刷新界面
